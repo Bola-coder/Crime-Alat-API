@@ -1,27 +1,18 @@
-const { createToken } = require("./token");
 const sendEmail = require("./email");
+const { generateVerificationCode } = require("./token");
 const { encryptString } = require("./encryption");
 
-// Function that creates an email verification token and sends it to the user's email.
-// FUnction params: the request object, and the user object
-// returns the hashed verification token
+// Function that generates a 6-digit code, emails it to the user, and returns its hash
+const createVerificationTokenAndSendToEmail = async (email) => {
+  const { code, hashedCode } = generateVerificationCode();
 
-const createVerificationTokenAndSendToEmail = (req, user) => {
-  // Create a verification URL and send to the user's email for verification
-  const verification_token = createToken("hex");
-  const verificationUrl = `${req.protocol}://${req.get(
-    "host"
-  )}/api/v1/auth/verify/${user.email}/${verification_token}`;
-
-  sendEmail({
-    email: user.email,
-    subject: "Email Verification",
-    message: `Please click on the link below to verify your email address: \n\n ${verificationUrl}`,
+  await sendEmail({
+    email: email,
+    subject: "Email Verification Code",
+    message: `Your email verification code is: ${code}\n\nIt will expire in 10 minutes.`,
   });
 
-  // Hash the verification token and save to the user data in the database
-  const hashedVerificationToken = encryptString(verification_token, 10);
-  return hashedVerificationToken;
+  return hashedCode;
 };
 
 module.exports = { createVerificationTokenAndSendToEmail };

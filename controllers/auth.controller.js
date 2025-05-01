@@ -10,7 +10,7 @@ const {
 const { signJWTToken } = require("../utils/jwt");
 const catchAsync = require("../utils/catchAsync");
 const AppError = require("../utils/AppError");
-const { compareEncryptedString } = require("../utils/encryption");
+const { isVerificationCodeValid } = require("../utils/token");
 const {
   createVerificationTokenAndSendToEmail,
 } = require("../utils/createVerificationToken");
@@ -19,7 +19,6 @@ const {
 const signup = catchAsync(async (req, res, next) => {
   const { firstname, lastname, phoneNumber, email, password } = req.body;
 
-  // Validating the request body
   const validation = validateUserSignup({
     firstname,
     lastname,
@@ -27,15 +26,13 @@ const signup = catchAsync(async (req, res, next) => {
     password,
     phoneNumber,
   });
+  if (validation.error)
+    return next(new AppError(validation.error.message, 400));
 
-  if (validation.error) {
-    return next(new AppError(validation.error.message, 404));
-  }
-  // Check if the user already exists exists
   const existingUser = await getUserByEmail(email);
   if (existingUser) {
     return next(
-      new AppError("User with the specified email address already exists", 404)
+      new AppError("User with the specified email already exists", 400)
     );
   }
 
@@ -45,34 +42,26 @@ const signup = catchAsync(async (req, res, next) => {
     phoneNumber,
     email,
     password,
+    role: "user",
   });
 
   if (!newUser) {
-    return next(new AppError("Failed to create new user", 404));
+    return next(new AppError("Failed to create new user", 500));
   }
 
-  // Hash the verification token and save to the user data in the database
-  const hashedVerificationToken = createVerificationTokenAndSendToEmail(
-    req,
-    newUser
-  );
+  // Generate 6-digit code, hash it, email it, and store the hash
+  const hashedCode = await createVerificationTokenAndSendToEmail(newUser.email);
 
   const user = await updateUserById(newUser._id, {
-    verificationToken: hashedVerificationToken,
+    verificationToken: hashedCode,
+    verificationTokenExpires: Date.now() + 10 * 60 * 1000,
   });
 
-  const token = signJWTToken(newUser._id);
-  res
-    .cookie("token", token, {
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000,
-      secure: req.secure || req.headers["x-forwarded-proto"] === "https",
-    })
-    .status(200)
-    .json({
-      status: "success",
-      data: user,
-    });
+  const token = signJWTToken(user._id);
+  res.status(201).json({
+    status: "success",
+    data: { user, token },
+  });
 });
 
 // Login function
@@ -96,89 +85,80 @@ const login = catchAsync(async (req, res, next) => {
   }
 
   const token = signJWTToken(user._id);
-  res
-    .cookie("token", token, {
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000,
-      secure: req.secure || req.headers["x-forwarded-proto"] === "https",
-    })
-    .status(200)
-    .json({
-      status: "success",
-      data: user,
-    });
+  res.status(200).json({
+    status: "success",
+    data: { user, token },
+  });
 });
 
 // Resend Verification email
 const resendEmailVerificationToken = catchAsync(async (req, res, next) => {
   const { email } = req.body;
-  // Check if user with email exist
   const user = await getUserByEmail(email).select("+verificationToken");
+
   if (!user) {
     return next(
-      new AppError("User with the specified email address does not exist", 404)
+      new AppError("User with the specified email does not exist", 404)
     );
   }
 
   if (user.emailVerified) {
-    return next(new AppError("User has already been verified", 404));
+    return next(new AppError("User has already been verified", 400));
   }
 
-  // Send the verification email to the user
-  const hashedVerificationToken = createVerificationTokenAndSendToEmail(
-    req,
-    user
-  );
+  const { code, hashedCode } = generateVerificationCode();
+  await sendVerificationCodeToEmail(user.email, code);
 
-  // stored a hashed version of the token in the database
-  const updatedUser = await updateUserById(user._id, {
-    verificationToken: hashedVerificationToken,
+  await updateUserById(user._id, {
+    verificationToken: hashedCode,
+    verificationTokenExpires: Date.now() + 10 * 60 * 1000,
   });
 
   res.status(200).json({
     status: "success",
-    message: "Verification link has been resent to your email address",
+    message: "Verification code resent to your email address",
   });
 });
 
 // Verify User Email
 const verifyUserEmail = catchAsync(async (req, res, next) => {
-  const { email, verification_token } = req.params;
-  // Check if user with email exist
-  const user = await getUserByEmail(email).select("+verificationToken");
+  const { email, verification_code } = req.body;
+
+  const user = await getUserByEmail(email).select(
+    "+verificationToken +verificationTokenExpires"
+  );
+
   if (!user) {
     return next(
-      new AppError("User with the specified email address does not exist", 404)
+      new AppError("User with the specified email does not exist", 404)
     );
   }
 
-  // Checks if the user is already verified
   if (user.emailVerified) {
-    return next(new AppError("User has already been verified", 404));
+    return next(new AppError("User has already been verified", 400));
   }
 
-  // Checks if the verificationToken in the request params matches the encrypted on in the Db
-  if (
-    !(await compareEncryptedString(verification_token, user.verificationToken))
-  ) {
-    return next(new AppError("Invalid verification token", 404));
+  if (Date.now() > user.verificationTokenExpires) {
+    return next(new AppError("Verification code has expired", 400));
   }
 
-  // Update the user's verification status
-  const verifiedUser = await updateUserById(
-    user._id,
-    {
-      emailVerified: true,
-      verificationToken: null,
-    },
-    {
-      new: true,
-    }
+  const isValidCode = await isVerificationCodeValid(
+    verification_code,
+    user.verificationToken
   );
+  if (!isValidCode) {
+    return next(new AppError("Invalid verification code", 400));
+  }
+
+  const verifiedUser = await updateUserById(user._id, {
+    emailVerified: true,
+    verificationToken: null,
+    verificationTokenExpires: null,
+  });
 
   res.status(200).json({
     status: "success",
-    message: "User's email verified successfully",
+    message: "Email verified successfully",
     user: verifiedUser,
   });
 });

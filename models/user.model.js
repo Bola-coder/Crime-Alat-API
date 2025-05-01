@@ -29,7 +29,6 @@ const userSchema = mongoose.Schema({
     required: [true, "Please provide your phone number"],
   },
   role: {
-    //This type will be used to determine the what actions users can perform based on subsxription
     type: String,
     enum: ["user", "admin", "superadmin"],
     default: "user",
@@ -50,6 +49,10 @@ const userSchema = mongoose.Schema({
   },
   verificationToken: {
     type: String,
+    select: false,
+  },
+  verificationTokenExpires: {
+    type: Date,
     select: false,
   },
   active: {

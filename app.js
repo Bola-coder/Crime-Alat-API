@@ -15,7 +15,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use("*", cloudinaryConfig);
-const appName = "AppName";
+const appName = "CrimeAlat";
 
 // req.isAuthenticated is provided from the auth router
 app.get("/", (req, res) => {
