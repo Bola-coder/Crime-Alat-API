@@ -31,6 +31,15 @@ const signup = catchAsync(async (req, res, next) => {
 
   const existingUser = await getUserByEmail(email);
   if (existingUser) {
+    if (!existingUser.emailVerified) {
+      return next(
+        new AppError(
+          "Email already registered but not verified. Please verify your email or resend verification code.",
+          409
+        )
+      );
+    }
+
     return next(
       new AppError("User with the specified email already exists", 400)
     );
@@ -163,6 +172,15 @@ const verifyUserEmail = catchAsync(async (req, res, next) => {
   });
 });
 
+// Check auth status
+const checkAuthStatus = catchAsync(async (req, res, next) => {
+  return res.status(200).json({
+    status: "success",
+    message: "User is authenticated",
+    user: req.user,
+  });
+});
+
 // Logout function
 const logout = async (req, res) => {
   res
@@ -176,5 +194,6 @@ module.exports = {
   login,
   resendEmailVerificationToken,
   verifyUserEmail,
+  checkAuthStatus,
   logout,
 };

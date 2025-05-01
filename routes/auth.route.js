@@ -14,6 +14,13 @@ router.route("/login").post((req, res, next) => {
 router.route("/verify").get(authcontroller.verifyUserEmail);
 router.post("/verify/resend/", authcontroller.resendEmailVerificationToken);
 
+router.get(
+  "/status",
+  authMiddleware.protectRoute,
+  authMiddleware.checkIfEmailIsVerified,
+  authcontroller.checkAuthStatus
+);
+
 router.get("/logout", authMiddleware.protectRoute, authcontroller.logout);
 
 // router.route("/me/:slug").get(authcontroller.getUserBySlug);
