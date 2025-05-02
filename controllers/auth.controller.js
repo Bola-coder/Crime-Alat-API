@@ -115,8 +115,7 @@ const resendEmailVerificationToken = catchAsync(async (req, res, next) => {
     return next(new AppError("User has already been verified", 400));
   }
 
-  const { code, hashedCode } = generateVerificationCode();
-  await sendVerificationCodeToEmail(user.email, code);
+  const hashedCode = await createVerificationTokenAndSendToEmail(newUser.email);
 
   await updateUserById(user._id, {
     verificationToken: hashedCode,
