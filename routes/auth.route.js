@@ -11,7 +11,7 @@ router.route("/login").post((req, res, next) => {
   // console.log(res);
   next();
 }, authcontroller.login);
-router.route("/verify").get(authcontroller.verifyUserEmail);
+router.route("/verify").post(authcontroller.verifyUserEmail);
 router.post("/verify/resend/", authcontroller.resendEmailVerificationToken);
 
 router.get(
