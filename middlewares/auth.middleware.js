@@ -50,7 +50,7 @@ const checkIfEmailIsVerified = catchAsync(async (req, res, next) => {
     return next(
       new AppError(
         "Email has not been verified, Please verify your email address!",
-        401
+        403
       )
     );
   }
